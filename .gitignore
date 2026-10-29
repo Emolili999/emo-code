@@ -1,0 +1,36 @@
+# Bağımlılıklar
+node_modules/
+.pnpm-store/
+
+# Derleme çıktıları (GitHub Releases'e yükleyin, repoya koymayın)
+dist/
+build/
+out/
+*.AppImage
+*.exe
+*.dmg
+*.deb
+*.rpm
+*.blockmap
+*.asar
+builder-debug.yml
+builder-effective-config.yaml
+
+# Ortam ve sırlar
+.env
+.env.*
+!.env.example
+
+# Editör ve işletim sistemi
+.vscode/*
+!.vscode/launch.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Loglar ve geçici dosyalar
+*.log
+npm-debug.log*
+yarn-error.log*
+*.tmp

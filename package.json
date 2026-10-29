@@ -1,0 +1,51 @@
+{
+  "name": "emo-code-v2",
+  "version": "0.2.0",
+  "desktopName": "emo-code-v2.desktop",
+  "description": "OpenRouter tabanlı, kademeli izin yönetimi ve gece mavisi temalı masaüstü kodlama ajanı (v2)",
+  "author": {
+    "name": "Emo"
+  },
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "dist": "electron-builder --linux AppImage",
+    "dist:win": "LANG=C.UTF-8 LC_ALL=C.UTF-8 electron-builder --win portable"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.17",
+    "marked": "12.0.2"
+  },
+  "devDependencies": {
+    "electron": "^44.9.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.emo.code.v2",
+    "productName": "emo-code-v2",
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**/*",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "icon": "assets/icon.png",
+      "synopsis": "OpenRouter tabanlı masaüstü kodlama ajanı"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "assets/icon.png",
+      "signAndEditExecutable": false
+    }
+  }
+}
