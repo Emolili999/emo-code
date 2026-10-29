@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>emo-code v2</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">EC</span>
+      <span class="brand-name">emo-code</span>
+      <span class="brand-tag">v2</span>
+    </div>
+    <button id="new-chat" class="side-btn primary" title="Yeni sohbet (Ctrl+N)">+ Yeni oturum</button>
+    <input id="chat-search" type="search" placeholder="Oturumlarda ara… (Ctrl+K)" autocomplete="off" spellcheck="false">
+    <nav id="chat-list" aria-label="Sohbetler"></nav>
+    <button id="open-settings" class="side-btn settings-btn" title="Ayarlar (Ctrl+,)">⚙ Ayarlar</button>
+  </aside>
+
+  <main id="main">
+    <header id="topbar">
+      <div class="field model-field" id="model-picker">
+        <label for="model-input">Model</label>
+        <div class="model-input-wrap">
+          <input id="model-input" placeholder="örn. anthropic/claude-sonnet-4.5" autocomplete="off" spellcheck="false">
+          <button id="model-toggle" type="button" class="model-icon-btn" title="Model seçiciyi aç/kapat" aria-label="Model listesini aç">▾</button>
+          <button id="model-refresh" type="button" class="model-icon-btn" title="API üzerinden güncel modelleri yenile" aria-label="Modelleri yenile">↻</button>
+        </div>
+        <datalist id="model-options"></datalist>
+
+        <div id="model-dropdown" class="model-dropdown" hidden>
+          <div class="model-dropdown-head">
+            <input id="model-search" type="search" placeholder="Model veya sağlayıcı ara… (gemini, claude, gpt, o3, deepseek, qwen…)" autocomplete="off" spellcheck="false">
+            <span id="model-count" class="model-count">Yükleniyor…</span>
+          </div>
+          <div id="model-family-filters" class="model-filters" role="group" aria-label="Model ailesi">
+            <button type="button" class="filter-chip active" data-family="all">Tümü</button>
+            <button type="button" class="filter-chip" data-family="claude">Claude</button>
+            <button type="button" class="filter-chip" data-family="gemini">Gemini</button>
+            <button type="button" class="filter-chip" data-family="gpt">GPT / OpenAI</button>
+            <button type="button" class="filter-chip" data-family="deepseek">DeepSeek</button>
+            <button type="button" class="filter-chip" data-family="qwen">Qwen</button>
+            <button type="button" class="filter-chip" data-family="llama">Llama</button>
+            <button type="button" class="filter-chip" data-family="grok">Grok</button>
+            <button type="button" class="filter-chip" data-family="mistral">Mistral</button>
+            <button type="button" class="filter-chip" data-family="other">Diğer</button>
+          </div>
+          <div id="model-cap-filters" class="model-cap-filters" role="group" aria-label="Özellik filtreleri">
+            <button type="button" class="cap-chip" data-cap="tools" title="Araç çağırmayı (tool calling) destekleyenler">🔧 Araç destekli</button>
+            <button type="button" class="cap-chip" data-cap="images" title="Görsel girdi destekleyenler">🖼 Görsel</button>
+            <button type="button" class="cap-chip" data-cap="free" title="Ücretsiz modeller">⚡ Ücretsiz</button>
+          </div>
+          <div id="model-runtime-bar" class="model-runtime-bar" role="group" aria-label="Model çalışma ayarları">
+            <button type="button" id="opt-web" class="cap-chip" title="Seçili modele canlı internet araması (:online) yeteneği kazandırır">🌐 İnternet erişimi</button>
+            <span class="runtime-sep" aria-hidden="true">|</span>
+            <span class="runtime-label">🧠 Düşünme:</span>
+            <button type="button" class="cap-chip reasoning-chip active" data-effort="" title="Modelin kendi varsayılan düşünme ayarı">Varsayılan</button>
+            <button type="button" class="cap-chip reasoning-chip" data-effort="none" title="Düşünme modunu kapat (ekstra token harcamaz)">Kapalı</button>
+            <button type="button" class="cap-chip reasoning-chip" data-effort="low" title="Düşük düşünme seviyesi (hızlı ve ekonomik)">Düşük</button>
+            <button type="button" class="cap-chip reasoning-chip" data-effort="medium" title="Orta düşünme seviyesi (dengeli)">Orta</button>
+            <button type="button" class="cap-chip reasoning-chip" data-effort="high" title="Yüksek düşünme seviyesi (derin analiz)">Yüksek</button>
+          </div>
+          <div id="model-list" class="model-list" role="listbox" aria-label="Kullanılabilir modeller"></div>
+        </div>
+      </div>
+      <span id="usage" class="usage" hidden></span>
+      <div class="perm-picker-wrap">
+        <button id="perm-btn" type="button" class="chip perm-chip" aria-haspopup="menu" aria-expanded="false" title="İzin Modu: Sıkı, Normal, Oto, Turbo">
+          <span id="perm-label" class="perm-label">Normal</span>
+          <span class="chip-arrow">▾</span>
+        </button>
+        <div id="perm-menu" class="perm-dropdown-menu" role="menu" hidden>
+          <div class="perm-menu-header">Modlar</div>
+          <button type="button" class="perm-option" data-mode="strict" role="menuitem">
+            <div class="perm-opt-info">
+              <div class="perm-opt-name">Sıkı</div>
+              <div class="perm-opt-desc">Her komudu tek tek sor</div>
+            </div>
+            <span class="perm-check">✓</span>
+          </button>
+          <button type="button" class="perm-option active" data-mode="normal" role="menuitem">
+            <div class="perm-opt-info">
+              <div class="perm-opt-name">Normal</div>
+              <div class="perm-opt-desc">Riskli kodlarda uyarı ver</div>
+            </div>
+            <span class="perm-check">✓</span>
+          </button>
+          <button type="button" class="perm-option" data-mode="auto" role="menuitem">
+            <div class="perm-opt-info">
+              <div class="perm-opt-name">Oto</div>
+              <div class="perm-opt-desc">Kendin karar ver (akıllı onay)</div>
+            </div>
+            <span class="perm-check">✓</span>
+          </button>
+          <button type="button" class="perm-option" data-mode="turbo" role="menuitem">
+            <div class="perm-opt-info">
+              <div class="perm-opt-name">Turbo</div>
+              <div class="perm-opt-desc">Tüm kodlara izin ver (tam otomatik)</div>
+            </div>
+            <span class="perm-check">✓</span>
+          </button>
+        </div>
+      </div>
+      <button id="plan-toggle" class="chip" title="Plan modu: model yalnızca inceler ve plan sunar; dosya değiştirmez, komut çalıştırmaz">Plan modu</button>
+      <div class="subagent-picker-wrap" id="subagent-picker">
+        <button id="subagent-toggle" type="button" class="chip subagent-toggle-btn on" aria-pressed="true" title="Bu sohbette çoklu dosya araştırmaları için Alt Ajan (Subagent) kullanımını aç/kapat">
+          <span class="subagent-icon">🤖</span>
+          <span id="subagent-status-label">Subagent: Açık</span>
+        </button>
+        <button id="subagent-menu-btn" type="button" class="chip subagent-arrow-btn" aria-haspopup="menu" aria-expanded="false" title="Subagent (Alt Ajan) modelini seç">▾</button>
+        <div id="subagent-menu" class="subagent-dropdown-menu" role="menu" hidden>
+          <div class="perm-menu-header">Alt Ajan (Subagent) Modeli — F/P Seçimi</div>
+          <div id="subagent-presets"></div>
+          <div class="subagent-custom-box">
+            <input id="subagent-search" type="search" list="model-options" placeholder="Model ara veya ID yaz…" autocomplete="off" spellcheck="false">
+            <button id="subagent-apply-custom" type="button" class="side-btn primary">Uygula</button>
+          </div>
+          <div id="subagent-search-results" class="subagent-search-results" hidden></div>
+        </div>
+      </div>
+      <button id="changes-btn" class="chip changes-chip" title="Oturumda yapılan dosya değişikliklerini ve farkları incele" hidden>
+        <span class="changes-icon">📝</span>
+        <span class="changes-label">Değişiklikler</span>
+        <span id="changes-badge" class="changes-badge">0</span>
+      </button>
+      <button id="undo-btn" class="chip" title="Son çalışmada yapılan dosya değişikliklerini geri al" hidden>↩ Geri al</button>
+      <div class="export-wrap">
+        <button id="export-btn" class="chip" aria-haspopup="menu" aria-expanded="false" title="Sohbeti Markdown veya JSON olarak kaydet">Dışa aktar ▾</button>
+        <div id="export-menu" role="menu" hidden>
+          <button type="button" data-ext="md" role="menuitem">Markdown (.md) olarak kaydet</button>
+          <button type="button" data-ext="json" role="menuitem">JSON (.json) olarak kaydet</button>
+          <button type="button" data-ext="cancel" class="dim" role="menuitem">Vazgeç</button>
+        </div>
+      </div>
+      <button id="pick-folder" class="chip folder-chip" title="Çalışma klasörünü seç">📁 Klasör seç</button>
+    </header>
+
+    <section id="messages" aria-live="polite">
+      <div id="empty">
+        <div class="welcome-card">
+          <div class="welcome-header">
+            <span class="brand-mark">EC</span>
+            <div>
+              <h1>emo-code'a hoş geldin</h1>
+              <p>Dosyaları okuyan, düzenleyen ve terminal komutları çalıştıran yerel kodlama ajanı.</p>
+            </div>
+          </div>
+          <div id="welcome-ws" class="welcome-ws"></div>
+          <div class="quick-cmds" aria-label="Hızlı komutlar">
+            <button type="button" class="cmd-pill" data-cmd="/init"><code>/init</code> <span>EMO.md oluştur</span></button>
+            <button type="button" class="cmd-pill" data-cmd="/plan"><code>/plan</code> <span>Plan modu</span></button>
+            <button type="button" class="cmd-pill" data-cmd="/mode"><code>/mode</code> <span>İzin modu</span></button>
+            <button type="button" class="cmd-pill" data-cmd="/diff"><code>/diff</code> <span>Değişiklikler</span></button>
+            <button type="button" class="cmd-pill" data-cmd="/compact"><code>/compact</code> <span>Bağlamı özetle</span></button>
+            <button type="button" class="cmd-pill" data-cmd="/help"><code>/help</code> <span>Tüm komutlar</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer id="composer-wrap">
+      <div id="status" hidden></div>
+      <div id="slash-hints" role="listbox" aria-label="Komut önerileri" hidden></div>
+      <div id="attachments" hidden></div>
+      <div id="composer">
+        <span class="prompt-chevron" aria-hidden="true">❯</span>
+        <textarea id="input" rows="1" placeholder="Bir görev yaz veya / ile komut seç… (görsel/metin sürükleyebilirsin)"></textarea>
+        <button id="send" aria-label="Gönder">Gönder</button>
+      </div>
+      <div id="composer-meta">
+        <span id="meta-workspace">Çalışma klasörü seçilmedi</span>
+        <span class="meta-hints"><kbd>Enter</kbd> gönder · <kbd>Shift+Enter</kbd> yeni satır · <kbd>/</kbd> komutlar · <kbd>Esc</kbd> durdur</span>
+      </div>
+    </footer>
+  </main>
+
+  <div id="modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-box">
+      <h2 id="modal-title">Ayarlar</h2>
+
+      <label for="api-key">OpenRouter API anahtarı</label>
+      <div class="row-inline">
+        <input id="api-key" type="password" placeholder="sk-or-v1-…" autocomplete="off" spellcheck="false">
+        <button id="test-key" class="side-btn" type="button" title="Anahtarın geçerliliğini ve kalan krediyi test et">Test Et</button>
+        <button id="clear-key" class="side-btn" type="button">Sil</button>
+      </div>
+      <p id="key-info" class="hint"></p>
+
+      <label for="theme">Tema</label>
+      <select id="theme">
+        <option value="dark">Koyu (Gece)</option>
+        <option value="midnight">Gece Mavisi (Midnight Blue)</option>
+        <option value="light">Açık (Sıcak Kağıt)</option>
+        <option value="auto">Sisteme uy</option>
+      </select>
+
+      <label for="fallback-model">Yedek model <span class="hint-inline">(birincil model hata verirse denenir)</span></label>
+      <input id="fallback-model" type="text" list="model-options" autocomplete="off" spellcheck="false" placeholder="isteğe bağlı">
+
+      <label for="subagent-model-setting">Alt ajan (Subagent) modeli <span class="hint-inline">(çoklu dosya araştırmaları için F/P modeli)</span></label>
+      <input id="subagent-model-setting" type="text" list="model-options" autocomplete="off" spellcheck="false" placeholder="google/gemini-2.5-flash">
+
+      <div class="grid">
+        <div>
+          <label for="max-steps">En fazla adım</label>
+          <input id="max-steps" type="number" min="1" max="100" placeholder="30">
+        </div>
+        <div>
+          <label for="cmd-timeout">Komut zaman aşımı (sn)</label>
+          <input id="cmd-timeout" type="number" min="1" max="600" placeholder="60">
+        </div>
+        <div>
+          <label for="temperature">Sıcaklık</label>
+          <input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="model varsayılanı">
+        </div>
+        <div>
+          <label for="budget">Sohbet bütçesi ($)</label>
+          <input id="budget" type="number" min="0" step="0.1" placeholder="sınırsız">
+          <p id="budget-info" class="hint">OpenRouter maliyet bilgisinden bütçeyi uygular.</p>
+        </div>
+        <div>
+          <label for="max-context-tokens">Bağlam üst sınırı (token)</label>
+          <input id="max-context-tokens" type="number" min="8000" max="1000000" step="1000" placeholder="150000">
+        </div>
+        <div>
+          <label for="md-update-steps">Her X adımda EMO.md güncelle</label>
+          <input id="md-update-steps" type="number" min="0" max="200" step="5" placeholder="kapalı (örn. 30)">
+          <p class="hint">Her X adımdan sonra yapılanları ve kalınan yeri EMO.md'ye yazar; yeni sohbete geçtiğinde kaldığı yerden devam eder (0 = kapalı).</p>
+        </div>
+      </div>
+
+      <p class="hint">Bağlam sınırı 8.000–1.000.000 token arasında uygulanır. Modelin kendi bağlam sınırı daha düşük olabilir.</p>
+
+      <label for="custom-prompt">Ek talimatlar <span class="hint-inline">(her sohbetin sistem prompt'una eklenir)</span></label>
+      <textarea id="custom-prompt" rows="3" placeholder="örn. Her zaman Türkçe yanıt ver."></textarea>
+
+      <label>Modlar</label>
+      <div class="perm-radios" role="radiogroup" aria-label="Modlar">
+        <label class="perm-radio-card" data-mode="strict">
+          <input type="radio" name="perm-mode" value="strict">
+          <div class="perm-radio-text">
+            <strong>Sıkı</strong>
+            <span>Her komudu sor (oturum atlaması yapmaz)</span>
+          </div>
+        </label>
+        <label class="perm-radio-card" data-mode="normal">
+          <input type="radio" name="perm-mode" value="normal">
+          <div class="perm-radio-text">
+            <strong>Normal</strong>
+            <span>Riskli kodlarda uyarı ver, güvenlileri hatırla</span>
+          </div>
+        </label>
+        <label class="perm-radio-card" data-mode="auto">
+          <input type="radio" name="perm-mode" value="auto">
+          <div class="perm-radio-text">
+            <strong>Oto</strong>
+            <span>Kendin karar ver (güvenlileri doğrudan onayla)</span>
+          </div>
+        </label>
+        <label class="perm-radio-card" data-mode="turbo">
+          <input type="radio" name="perm-mode" value="turbo">
+          <div class="perm-radio-text">
+            <strong>Turbo</strong>
+            <span>Tüm kodlara izin ver (tam otomatik, sormaz)</span>
+          </div>
+        </label>
+      </div>
+
+      <label class="check">
+        <input id="sandbox" type="checkbox">
+        Komutları sandbox içinde çalıştır (bubblewrap)
+      </label>
+      <label class="check sub">
+        <input id="sandbox-net" type="checkbox">
+        Sandbox içinde ağ erişimine izin ver
+      </label>
+      <p id="sandbox-info" class="hint">Sandbox'ta ev dizinin boştur ve yalnızca çalışma klasörü yazılabilir; sistem salt okunurdur. Ağ erişimi kapalıyken <code>npm install</code> gibi komutlar çalışmaz.</p>
+
+      <div class="modal-actions">
+        <button id="settings-cancel" class="side-btn">Vazgeç</button>
+        <button id="settings-save" class="side-btn primary">Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="changes-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="changes-modal-title">
+    <div class="changes-box">
+      <header class="changes-head">
+        <div class="changes-head-left">
+          <span class="changes-modal-icon">📝</span>
+          <div>
+            <h2 id="changes-modal-title">Değişiklik İnceleme (Diff & Review)</h2>
+            <div id="changes-stats-bar" class="changes-stats-bar">
+              <span id="changes-count-files" class="stat-pill files-pill">0 dosya</span>
+              <span id="changes-count-adds" class="stat-pill adds-pill">+0 satır eklendi</span>
+              <span id="changes-count-dels" class="stat-pill dels-pill">-0 satır silindi</span>
+            </div>
+          </div>
+        </div>
+        <div class="changes-head-actions">
+          <button id="changes-undo-all" class="side-btn danger-btn" title="Bu oturumdaki tüm değişiklikleri geri al">↩ Tümünü Geri Al</button>
+          <button id="changes-close" class="side-btn primary" title="Kapat (Esc)">✕ Kapat</button>
+        </div>
+      </header>
+
+      <div class="changes-body">
+        <aside id="changes-file-list" class="changes-file-list" aria-label="Değişen Dosyalar"></aside>
+        <main id="changes-diff-panel" class="changes-diff-panel">
+          <div class="changes-diff-empty">İncelemek için soldan bir dosya seçin.</div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <script src="../node_modules/marked/marked.min.js"></script>
+  <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
