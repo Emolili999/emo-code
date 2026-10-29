@@ -1,10 +1,10 @@
 # emo-code v2
 
-OpenRouter API ile çalışan masaüstü kodlama ajanı (Electron + JavaScript). Çalışma klasörünüzdeki dosyaları okuyabilir, düzenleyebilir ve terminal komutları çalıştırabilir. Kademeli izin modları ve Gece Mavisi teması ile donatılmıştır.
+Desktop AI coding agent powered by the OpenRouter API (Electron + JavaScript). It can inspect, read, and edit files in your workspace, as well as execute terminal commands. Equipped with tiered permission modes, comprehensive diff inspection, and a Midnight Blue theme.
 
-## Kurulum
+## Installation
 
-Node.js ve npm kurulu olmalı.
+Ensure Node.js and npm are installed.
 
 ```bash
 cd emo-code-v2
@@ -12,108 +12,104 @@ npm install
 npm start
 ```
 
-Fedora'da gerekirse:
+On Fedora (if needed):
 
 ```bash
 sudo dnf install -y nodejs npm bubblewrap
 ```
 
-VS Code'da klasörü açıp terminalden `npm start` çalıştırabilir veya `.vscode/launch.json` içindeki yapılandırmayı F5 ile başlatabilirsin.
+You can also open the project in VS Code and run `npm start` from the terminal, or launch it with F5 using the `.vscode/launch.json` configuration.
 
-## İzin Yönetimi (Kademeli Modlar)
+## Permission Management (Tiered Modes)
 
-Üst çubuktan veya `/mode` komutuyla kolayca değiştirilebilir:
+Easily switchable from the top toolbar or via the `/mode` command:
 
-- **🛡️ Sıkı (Strict)**: Her komudu ve dosya işlemini sorar. Oturum izniyle atlama yapmaz; her işlemde tam denetim sağlar.
-- **⚖️ Normal (Normal)**: Riskli kodlarda mutlaka uyarır ve onay ister; güvenli komutları oturum izniyle hatırlar.
-- **🤖 Oto (Auto)**: Kendin karar ver modu. Güvenli komutları ve dosya değişikliklerini otomatik onaylar; riskli veya hassas işlemlerde kullanıcıya sorar.
-- **⚡ Turbo (Turbo)**: Tüm kodlara izin ver. Tam otomatik otonom mod; soru sormadan komut ve kodları doğrudan çalıştırır.
+- **🛡️ Strict**: Prompts for every command and file operation. No session bypass; provides complete manual control over every action.
+- **⚖️ Normal**: Warns and requests confirmation for risky actions; remembers approvals for safe commands within the session.
+- **🤖 Auto**: Autonomous decision mode. Automatically approves safe commands and file edits; prompts only for risky or sensitive actions.
+- **⚡ Turbo**: Full autonomous mode. Executes commands and applies code changes directly without confirmation prompts.
 
-## Değişiklik İnceleme (Diff & Review)
+## Review & Diff (Changes Inspection)
 
-Oturumda yapılan dosya değişikliklerini ve farklarını incelemek için üst çubuktaki `📝 Değişiklikler` butonuna tıklayabilir veya `/diff` komutunu kullanabilirsin:
-- Hangi dosyada kaç ekleme (`+`) ve silme (`-`) yapıldığını gösterir.
-- Satır numaralı renkli diff görünümü (silinenler kırmızı, eklenenler yeşil).
-- İstenen dosyayı tek tıkla geri alma (`undoFile`) veya tüm oturumu geri alma desteği.
+To review file modifications and diffs made during the session, click the `📝 Changes` button on the top bar or use the `/diff` command:
+- Shows additions (`+`) and deletions (`-`) per file.
+- Syntax-highlighted, line-numbered diff view (red for deletions, green for additions).
+- Single-click file rollback (`undoFile`) or full session rollback support.
 
-## Temalar
+## Themes
 
-- **Koyu (Gece)**
-- **Gece Mavisi (Midnight Blue)**: Derin lacivert ve elektrik mavisi tonlarında gece modu
-- **Açık (Sıcak Kağıt)**
-- **Sisteme uy**
+- **Dark (Night)**
+- **Midnight Blue**: Deep navy and electric blue tones
+- **Light (Warm Paper)**
+- **System Sync**
 
-## İlk kullanım
+## Getting Started
 
-1. Ayarlar'dan OpenRouter API anahtarını gir (https://openrouter.ai/keys). Anahtar mümkün olduğunda işletim sistemi güvenli depolamasıyla şifrelenir.
-2. Üstte modeli seç veya model kimliğini yaz. Dosya değişikliği için araç çağırmayı destekleyen bir model kullan.
-3. **Klasör seç** ile yalnızca ilgili proje klasörünü seç.
-4. İsteğini yaz.
+1. Go to **Settings** and enter your OpenRouter API key (https://openrouter.ai/keys). The key is encrypted using the operating system's secure storage whenever supported.
+2. Select a model or enter a model ID at the top bar. Choose a model that supports tool calling for file modifications.
+3. Use **Select Folder** to choose your workspace directory.
+4. Enter your prompt to start coding.
 
-## Araçlar
+## Built-in Tools
 
 `list_dir`, `read_file`, `glob`, `search_files`, `write_file`, `edit_file`, `multi_edit`, `run_command`, `web_fetch`, `todo_write`, `ask_user`.
 
-## Güvenlik ve geri alma
+## Security & Rollback
 
-- API anahtarı destekleniyorsa işletim sisteminin güvenli depolamasıyla şifrelenir; arayüz anahtarı almaz.
-- Ev dizininin tamamı, kök dizin, sistem klasörleri ve belirli gizli dizinler çalışma alanı olarak reddedilir.
-- Özel anahtar ve benzeri dosyalar modele gönderilmez. `.env` ve benzeri hassas dosyalar her seferinde onay ister.
-- `web_fetch` yalnızca HTTP(S) kabul eder; yerel, özel, link-local, rezerve IPv4/IPv6 adresleri ve bu adreslere yönlendirmeler engellenir. Dış alan adlarının DNS yanıtları da denetlenir.
-- Komutlar `bash` üzerinden çalışır. Komut kalıpları riskli işlemleri her zaman yakalayamayabileceğinden, onay vermeden önce komutu kontrol et. Mümkünse Ayarlar'da bubblewrap sandbox'ını etkinleştir; ağ erişimi varsayılan olarak kapalıdır.
-- Araçların dosya değişiklikleri ve `run_command` sonrası tespit edilen proje dosyası farkları **Geri al** ile geri alınabilir. İkili dosyaların yedekleri bayt bazında korunur.
-- Komut değişikliği izlemesi performans amacıyla `.git`, `node_modules`, `.venv`, `venv`, `vendor`, `dist`, `build` ve `coverage` dizinlerini taramaz. Dosya sayısı veya yedek boyutu sınırına takılan değişiklikler raporda açıkça belirtilir; bunlar her zaman geri alınamayabilir. Önemli projelerde komut çalıştırmadan önce Git commit/stash almak yine de önerilir.
-- Geri alma, harici süreçlerin aynı dosyalara eşzamanlı yazdığı durumlarda tam bir işlem günlüğü garantisi vermez.
+- **Encrypted API Keys**: API keys are securely stored and encrypted via OS keychain/secret store; the frontend never exposes raw keys.
+- **Workspace Confinement**: User home directory, root directory, system folders, and critical hidden directories are restricted from being selected as workspaces.
+- **Sensitive File Protection**: Private keys and certificates are excluded from model context. `.env` and sensitive files always require explicit user confirmation.
+- **Restricted Web Fetch**: `web_fetch` only permits HTTP(S) requests. Local, private, link-local, and reserved IPv4/IPv6 addresses (and redirects to them) are blocked, with DNS rebinding protections.
+- **Command Sandboxing**: Commands execute via `bash`. If available, enable the bubblewrap sandbox in Settings (network access disabled by default).
+- **Undo & Backup**: File edits and project modifications detected after `run_command` can be rolled back via **Undo**. Binary backups are preserved on a byte-level.
+- **Excluded Directories**: For performance reasons, command tracking ignores `.git`, `node_modules`, `.venv`, `venv`, `vendor`, `dist`, `build`, and `coverage`. We always recommend committing or stashing in Git before running heavy operations.
 
-## Ayarlar
+## Settings
 
-- **En fazla adım:** Bir kullanıcı isteğinde modelin araç döngüsüne izin verilen üst sınır.
-- **Komut zaman aşımı:** Komut başına en fazla 600 saniye.
-- **Sohbet bütçesi:** OpenRouter kullanım maliyetine göre harcama sınırına gelindiğinde bekleyen araç çağrıları ve yeni model istekleri durdurulur.
-- **Bağlam üst sınırı:** 8.000–1.000.000 token. Modelin gerçek bağlam sınırı daha düşük olabilir.
+- **Max Steps**: Upper limit of tool call iterations permitted per user request.
+- **Command Timeout**: Maximum execution time per command (up to 600s).
+- **Chat Budget**: Spending limit based on OpenRouter usage; stops further model and tool requests once reached.
+- **Context Window Limit**: 8,000–1,000,000 tokens (dependent on chosen model's maximum limit).
 
-## Komutlar
+## Commands
 
-- `/help`: komut yardımını gösterir.
-- `/init`: proje talimatları için `EMO.md` oluşturulmasını ister. Dosyaya yazabilmek için plan modu kapalı olmalıdır.
-- `/plan`: salt okunur plan modunu açar/kapatır.
-- `/mode <sıkı|normal|oto|turbo>`: izin modunu gösterir veya değiştirir.
-- `/compact`: konuşmayı özetleyerek bağlamı küçültür.
-- `/undo`: son geri alma grubunu geri yükler.
-- `/clear`: sohbet mesajlarını temizler.
-- `/model <ad>`: model seçer.
+- `/help`: Display command help.
+- `/init`: Request creation of `EMO.md` for project instructions (requires plan mode to be off).
+- `/plan`: Toggle read-only plan mode.
+- `/mode <strict|normal|auto|turbo>`: View or change permission mode.
+- `/compact`: Compact and summarize conversation context.
+- `/undo`: Revert the last batch of changes.
+- `/clear`: Clear chat history.
+- `/model <name>`: Switch the active model.
 
-Sohbeti dışa aktarırken **JSON** (mesajlar/araç kayıtları) veya **Markdown** (okunabilir döküm) seçebilirsin.
+Chat exports are available in **JSON** (raw messages and tool calls) or **Markdown** (human-readable transcript).
 
-## Testler
+## Testing
 
 ```bash
 npm test
 ```
 
-## Dosyalar
+## Project Structure
 
-- `main.js`: pencere, IPC ve ajan döngüsü
-- `preload.js`: arayüz ile ana süreç arasındaki güvenli köprü
-- `lib/`: araçlar, güvenlik denetimleri, OpenRouter istemcisi, onay ve geri alma
-- `renderer/`: arayüz
-- `test/`: birim ve araç testleri
+- `main.js`: Main process, window management, IPC handlers, and agent loop
+- `preload.js`: Secure bridge between renderer and main process
+- `lib/`: Tools, security checks, OpenRouter client, approval system, and rollback engine
+- `renderer/`: Frontend user interface
+- `test/`: Unit and tool tests
 
-## Talimat dosyaları
+## Instruction Files
 
-Çalışma klasöründe varsa şu dosyalar okunup sistem bağlamına eklenir (ilk bulunan kullanılır):
+If present in the workspace root, one of the following files will be automatically loaded into the system prompt (first match used):
 `EMO.md`, `OR.md`, `AGENTS.md`.
 
-## Yapay zekâ ile üretim beyanı
+## AI-Assisted Development Statement
 
-Bu projenin kaynak kodu ve simgesi (`assets/icon.png`) büyük ölçüde yapay zekâ ile üretilmiş, insan tarafından tasarlanıp düzenlenmiştir.
+The source code and icon (`assets/icon.png`) for this project were substantially generated with AI assistance, architected, curated, and reviewed by a human developer.
 
-Mimari kararlar, istem (prompt) tasarımı, düzenleme, test ve doğrulama insan katkısıyla yapılmıştır. Bu projede üçüncü taraf marka, logo, karakter veya tanınmış bir eserin taklidi amaçlanmamıştır.
+Architectural decisions, prompt engineering, refactoring, testing, and verification were guided by human input. This project does not intend to infringe on any third-party brands, logos, characters, or established works.
 
-Yapay zekâ çıktılarının telif koruması ülkeden ülkeye değişebilir ve bazı hukuk düzenlerinde makine üretimi bölümler için koruma sınırlıdır. Bu durum kodu MIT lisansıyla paylaşmayı ve kullanmayı engellemez; yalnızca birebir kopyalamaya karşı ileri sürülebilecek hakların kapsamını etkileyebilir.
+## License
 
-## Lisans
-
-MIT — ayrıntılar için [LICENSE](LICENSE) dosyasına bakın.
-Kullanılan üçüncü taraf bileşenlerin lisansları: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
-
+MIT — see [LICENSE](LICENSE) for details.  
+Third-party component licenses: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
