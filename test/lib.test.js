@@ -3,12 +3,13 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const net = require('node:net');
 
 const { lineDiff, detailedDiff } = require('../lib/diff');
 const { globFiles, globToRegex } = require('../lib/glob');
 const ctx = require('../lib/context');
 const { isPrivateAddress, assertPublicUrl, htmlToText } = require('../lib/webfetch');
-const { runCommand, bwrapArgs, sanitizedEnv } = require('../lib/exec');
+const { runCommand, bwrapArgs, sanitizedEnv, sandboxAvailable } = require('../lib/exec');
 const store = require('../lib/store');
 const { createCheckpoints } = require('../lib/checkpoints');
 const { createApprovals } = require('../lib/approvals');
@@ -136,9 +137,10 @@ test('exec: çıktı, çıkış kodu, zaman aşımı ve durdurma', async () => {
   assert.ok(chunks.join('').includes('a'));
   // stdin kapalı: okuyan komut takılmaz
   assert.match(await runCommand('cat; echo bitti', { cwd: d, timeoutMs: 3000 }), /bitti/);
-  // Çok baytlı UTF-8 karakterler paket sınırında bölünse bile bozulmaz
-  const utf8Out = await runCommand('node -e \'const b=Buffer.from("ğüşiöçĞÜŞİÖÇ");process.stdout.write(b.subarray(0,3));setTimeout(()=>process.stdout.write(b.subarray(3)),20)\'', { cwd: d });
-  assert.equal(utf8Out, 'ğüşiöçĞÜŞİÖÇ');
+  // Çok baytlı UTF-8 karakterin baytları ayrı çıktılarda gelse de bozulmaz.
+  // Alt süreçte Node başlatmaya bağlı kalmamak için printf ile iki bayta böl.
+  const utf8Out = await runCommand("printf '\\304'; sleep 0.02; printf '\\237'", { cwd: d });
+  assert.equal(utf8Out, 'ğ');
 });
 
 test('exec: bwrap argümanları ağı, /run dizinini, ortam değişkenlerini ve ev dizinini yalıtır', () => {
@@ -155,6 +157,56 @@ test('exec: bwrap argümanları ağı, /run dizinini, ortam değişkenlerini ve 
   assert.equal(env.GEMINI_API_KEY, undefined);
   assert.equal(env.SSH_AUTH_SOCK, undefined);
   assert.equal(env.MY_SECRET, undefined);
+});
+
+test('exec: bubblewrap çalışma klasörünü kalıcı yazar, geçici /tmp yazısını dışarı sızdırmaz', async (t) => {
+  if (!sandboxAvailable()) return t.skip('bubblewrap kurulu değil');
+  const ws = tmp();
+  const escaped = path.join(path.dirname(ws), `${path.basename(ws)}-outside.txt`);
+  const quote = (value) => `'${value.replace(/'/g, "'\\''")}'`;
+  try {
+    const out = await runCommand(
+      `printf kaçış > ${quote(escaped)}; printf içeride > inside.txt`,
+      { cwd: ws, sandbox: { network: true }, timeoutMs: 5000 }
+    );
+    assert.equal(fs.readFileSync(path.join(ws, 'inside.txt'), 'utf8'), 'içeride');
+    assert.equal(fs.existsSync(escaped), false);
+    assert.equal(out, '(çıktı yok)');
+  } finally {
+    fs.rmSync(ws, { recursive: true, force: true });
+    fs.rmSync(escaped, { force: true });
+  }
+});
+
+test('exec: ağ kapalı bubblewrap ana makinedeki yerel porta erişemez', async (t) => {
+  if (!sandboxAvailable()) return t.skip('bubblewrap kurulu değil');
+  const server = net.createServer((socket) => socket.destroy());
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+  } catch (error) {
+    server.close();
+    if (error.code === 'EPERM' || error.code === 'EACCES') {
+      return t.skip('bu ortam yerel test sunucusu açmaya izin vermiyor');
+    }
+    throw error;
+  }
+  const port = server.address().port;
+  try {
+    const result = await runCommand(
+      `timeout 2 bash -c 'echo test > /dev/tcp/127.0.0.1/${port}'`,
+      { cwd: tmp(), sandbox: { network: false }, timeoutMs: 4000 }
+    );
+    if (/NETLINK_ROUTE|Operation not permitted/.test(result)) {
+      return t.skip('bu ortam bubblewrap ağ ad alanı oluşturmayı engelliyor');
+    }
+    assert.equal(result.includes('[çıkış kodu: 0]'), false, result);
+    assert.match(result, /çıkış kodu:|No route|Network is unreachable|Connection refused/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test('store: atomik yazma, bozuk dosyada yedekten okuma', () => {

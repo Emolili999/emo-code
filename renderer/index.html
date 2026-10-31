@@ -4,15 +4,15 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>emo-code v2</title>
+  <title>emocode v3.1</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <aside id="sidebar">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">EC</span>
-      <span class="brand-name">emo-code</span>
-      <span class="brand-tag">v2</span>
+      <span class="brand-name">emocode</span>
+      <span class="brand-tag">v3</span>
     </div>
     <button id="new-chat" class="side-btn primary" title="Yeni sohbet (Ctrl+N)">+ Yeni oturum</button>
     <input id="chat-search" type="search" placeholder="Oturumlarda ara… (Ctrl+K)" autocomplete="off" spellcheck="false">
@@ -220,6 +220,11 @@
           <label for="budget">Sohbet bütçesi ($)</label>
           <input id="budget" type="number" min="0" step="0.1" placeholder="sınırsız">
           <p id="budget-info" class="hint">OpenRouter maliyet bilgisinden bütçeyi uygular.</p>
+        </div>
+        <div>
+          <label for="subagent-budget">Alt ajan bütçesi ($)</label>
+          <input id="subagent-budget" type="number" min="0" step="0.05" placeholder="0.5">
+          <p class="hint">Bir çalışmada alt ajanların toplam harcama sınırı (istek sayısı da en fazla 12).</p>
         </div>
         <div>
           <label for="max-context-tokens">Bağlam üst sınırı (token)</label>

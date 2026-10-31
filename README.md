@@ -1,16 +1,17 @@
-# emo-code v2
+# emocode v3.1
 
 Desktop AI coding agent powered by the OpenRouter API (Electron + JavaScript). It can inspect, read, and edit files in your workspace, as well as execute terminal commands. Equipped with tiered permission modes, comprehensive diff inspection, and a Midnight Blue theme.
 
 ## Installation
 
-Ensure Node.js and npm are installed.
+Install Node.js 22.12 or newer and npm.
 
 ```bash
-cd emo-code-v2
-npm install
+npm ci
 npm start
 ```
+
+See [CHANGELOG.md](CHANGELOG.md) for changes from the v2 line.
 
 On Fedora (if needed):
 
@@ -52,7 +53,7 @@ To review file modifications and diffs made during the session, click the `📝 
 
 ## Built-in Tools
 
-`list_dir`, `read_file`, `glob`, `search_files`, `write_file`, `edit_file`, `multi_edit`, `run_command`, `web_fetch`, `todo_write`, `ask_user`.
+`list_dir`, `read_file`, `glob`, `search_files`, `write_file`, `edit_file`, `multi_edit`, `run_command`, `shell_session`, `background_process`, `git`, `web_fetch`, `web_search`, `todo_write`, `ask_user`.
 
 ## Security & Rollback
 
@@ -60,8 +61,8 @@ To review file modifications and diffs made during the session, click the `📝 
 - **Workspace Confinement**: User home directory, root directory, system folders, and critical hidden directories are restricted from being selected as workspaces.
 - **Sensitive File Protection**: Private keys and certificates are excluded from model context. `.env` and sensitive files always require explicit user confirmation.
 - **Restricted Web Fetch**: `web_fetch` only permits HTTP(S) requests. Local, private, link-local, and reserved IPv4/IPv6 addresses (and redirects to them) are blocked, with DNS rebinding protections.
-- **Command Sandboxing**: Commands execute via `bash`. If available, enable the bubblewrap sandbox in Settings (network access disabled by default).
-- **Undo & Backup**: File edits and project modifications detected after `run_command` can be rolled back via **Undo**. Binary backups are preserved on a byte-level.
+- **Command Sandboxing**: Commands run through Bash on Linux and PowerShell on Windows. On Linux, Bubblewrap sandboxing is enabled by default on first run when available, with network access disabled. Existing user settings are preserved.
+- **Undo & Backup**: File edits and project modifications detected after `run_command` can be rolled back via **Undo**. Binary backups are preserved byte-for-byte. Command approval shows snapshot limits; `.git`, dependency and build directories are excluded, snapshots cover up to 10,000 files and 25 MB, and individual backups are limited to 10 MB.
 - **Excluded Directories**: For performance reasons, command tracking ignores `.git`, `node_modules`, `.venv`, `venv`, `vendor`, `dist`, `build`, and `coverage`. We always recommend committing or stashing in Git before running heavy operations.
 
 ## Settings
@@ -88,7 +89,14 @@ Chat exports are available in **JSON** (raw messages and tool calls) or **Markdo
 
 ```bash
 npm test
+npm run test:coverage
+npm run test:ui
+npm run test:windows
 ```
+
+`test:coverage` enforces 70% line, 60% branch, and 65% function coverage for the main process, preload bridge, and `lib/`; it does not impose a renderer coverage threshold. `test:ui` starts Electron with an isolated profile and a local OpenRouter fixture, then checks the missing-key guard, a rendered OpenRouter error, cancellation recovery, a full send/response through the real main process and IPC bridge, and settings/chat restoration after restarting Electron. IPC tests also cover approval round trips and image attachment persistence/resolution. The Windows CI job runs the portable IPC, renderer bridge, security, and attachment checks, builds portable and unpacked app targets, then launches the packaged app in a fresh profile and verifies that its renderer page becomes available.
+
+GitHub Actions runs the coverage suite and Electron smoke test on Linux, and the portable checks, Windows package builds, and packaged-app startup smoke test on Windows.
 
 ## Project Structure
 

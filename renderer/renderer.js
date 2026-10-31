@@ -25,6 +25,10 @@ const TOOL_TITLES = {
   multi_edit: 'MultiEdit',
   run_command: 'Bash',
   web_fetch: 'WebFetch',
+  web_search: 'Web Search',
+  shell_session: 'Shell Session',
+  background_process: 'Arka Plan Süreci',
+  git: 'Git',
   todo_write: 'TodoWrite',
   ask_user: 'AskUser',
   subagent_explore: 'Subagent'
@@ -43,7 +47,7 @@ let modelFilterFamily = 'all';   // all | claude | gemini | gpt | deepseek | qwe
 const modelFilterCaps = new Set(); // tools | images | free
 let modelSearchQuery = '';
 let modelFocusIdx = -1;
-const modelInfo = new Map();     // id -> { tools, images }
+const modelInfo = new Map();     // id -> { tools, images, context }
 const running = new Set();       // çalışan sohbet kimlikleri
 const live = {};                 // chatId -> { el, textEl, text, tools, raf, reasoningEl, reasoning, status }
 
@@ -155,7 +159,7 @@ function addRow(parent, className) {
 
 function toolLabel(args) {
   if (!args) return '';
-  const v = args.task ?? args.path ?? args.command ?? args.pattern ?? args.url ?? args.question ?? '';
+  const v = args.task ?? args.path ?? args.command ?? args.pattern ?? args.query ?? args.url ?? args.question ?? args.id ?? args.action ?? '';
   return String(v).length > 80 ? String(v).slice(0, 80) + '…' : String(v);
 }
 
@@ -263,11 +267,12 @@ function makeToolEl(name, args, result) {
     livePre.textContent = (livePre.textContent + text).slice(-20000);
     livePre.scrollTop = livePre.scrollHeight;
   };
-  const setResult = (text) => {
+  const setResult = (text, atts) => {
     d.classList.remove('pending');
     livePre?.remove();
     if (name === 'todo_write') return;
     d.appendChild(el('pre', null, text));
+    for (const url of atts || []) if (/^data:image\//.test(url)) d.appendChild(makeAttImg(url));
   };
   if (result !== undefined) setResult(result);
   return { el: d, setResult, appendOutput };
@@ -280,10 +285,33 @@ function makeReasoningEl() {
   return d;
 }
 
+// image_ref → data URL (main süreçte attachments deposundan okunur); aynı ref tekrar okunmaz.
+const attachmentCache = new Map();
+function loadAttachment(ref) {
+  if (!attachmentCache.has(ref)) attachmentCache.set(ref, window.api.getAttachment(ref).catch(() => null));
+  return attachmentCache.get(ref);
+}
+function makeAttImg(url) {
+  const img = document.createElement('img');
+  img.src = url;
+  img.className = 'att-img';
+  img.alt = 'ek görsel';
+  return img;
+}
+
 function renderUserContent(target, content) {
   if (!Array.isArray(content)) { target.textContent = content; return; }
   for (const p of content) {
     if (p.type === 'text') target.appendChild(el('div', null, p.text));
+    else if (p.type === 'image_ref') {
+      const holder = el('span', 'blocked-img', '[görsel yükleniyor…]');
+      target.appendChild(holder);
+      loadAttachment(p.ref).then((url) => {
+        if (url && /^data:image\//.test(url)) holder.replaceWith(makeAttImg(url));
+        else holder.textContent = '[görsel bulunamadı]';
+      });
+    }
+    else if (p.type === 'file_ref') target.appendChild(el('span', 'file-attachment', `📄 ${p.filename || 'PDF eki'}`));
     else if (p.type === 'image_url' && /^data:image\//.test(p.image_url?.url || '')) {
       const img = document.createElement('img');
       img.src = p.image_url.url;
@@ -453,6 +481,7 @@ function updateUsage() {
 let currentChangesDetails = null;
 let selectedChangesFile = null;
 let showFullChangesDiff = false;
+let selectedChangesRunId = null;
 
 async function updateUndo() {
   const chat = active();
@@ -498,20 +527,25 @@ function closeChangesModal() {
   $('changes-modal')?.classList.add('hidden');
 }
 
-async function openChangesModal(targetPath = null) {
+async function openChangesModal(targetPath = null, runId = null) {
   const chat = active();
   if (!chat) return;
   const modal = $('changes-modal');
   if (!modal) return;
 
   try {
-    currentChangesDetails = await window.api.checkpointDetails(chat.id);
+    selectedChangesRunId = runId;
+    currentChangesDetails = runId
+      ? await window.api.checkpointRunDetails(chat.id, runId)
+      : await window.api.checkpointDetails(chat.id);
   } catch (e) {
     notice(chat, `Değişiklikler yüklenemedi: ${e.message}`);
     return;
   }
 
   const det = currentChangesDetails;
+  $('changes-modal-title').textContent = runId ? 'Bu Çalışmanın Değişiklikleri' : 'Değişiklik İnceleme (Diff & Review)';
+  $('changes-undo-all').hidden = !!runId;
   $('changes-count-files').textContent = `${det.totalFiles} dosya`;
   $('changes-count-adds').textContent = `+${det.totalAdditions} satır eklendi`;
   $('changes-count-dels').textContent = `-${det.totalDeletions} satır silindi`;
@@ -645,25 +679,24 @@ function renderChangesDiffPanel() {
     renderChangesDiffPanel();
   });
 
-  const undoBtn = document.createElement('button');
-  undoBtn.type = 'button';
-  undoBtn.className = 'diff-undo-file-btn';
-  undoBtn.textContent = '↩ Bu Dosyayı Geri Al';
-  undoBtn.addEventListener('click', async () => {
-    if (!confirm(`"${f.relativePath}" dosyasındaki değişiklikler geri alınsın mı?`)) return;
-    const chat = active();
-    if (!chat) return;
-    const r = await window.api.undoFile(chat.id, f.path);
-    notice(chat, r.message);
-    await updateUndo();
-    if (!currentChangesDetails?.totalFiles) {
-      closeChangesModal();
-    } else {
-      await openChangesModal();
-    }
-  });
-
-  actions.append(toggleBtn, undoBtn);
+  actions.append(toggleBtn);
+  if (!selectedChangesRunId) {
+    const undoBtn = document.createElement('button');
+    undoBtn.type = 'button';
+    undoBtn.className = 'diff-undo-file-btn';
+    undoBtn.textContent = '↩ Bu Dosyayı Geri Al';
+    undoBtn.addEventListener('click', async () => {
+      if (!confirm(`"${f.relativePath}" dosyasındaki değişiklikler geri alınsın mı?`)) return;
+      const chat = active();
+      if (!chat) return;
+      const r = await window.api.undoFile(chat.id, f.path);
+      notice(chat, r.message);
+      await updateUndo();
+      if (!currentChangesDetails?.totalFiles) closeChangesModal();
+      else await openChangesModal();
+    });
+    actions.append(undoBtn);
+  }
   head.append(titleWrap, actions);
   panel.appendChild(head);
 
@@ -764,6 +797,8 @@ function renderMessages() {
       renderUserContent(addRow(messagesEl, 'user-msg'), m.content);
     } else if (m.role === 'notice') {
       addRow(messagesEl, 'notice').textContent = m.content;
+    } else if (m.role === 'changes_summary') {
+      addRow(messagesEl).appendChild(renderChangesSummary(m));
     } else if (m.role === 'assistant') {
       if (m.reasoning) {
         const r = makeReasoningEl();
@@ -790,6 +825,34 @@ function renderMessages() {
   if (!messagesEl.children.length) messagesEl.appendChild(emptyEl);
   scrollDown();
   updateStatus();
+}
+
+function renderChangesSummary(summary) {
+  const card = el('div', 'run-changes-summary');
+  const heading = el('strong', null, 'Bu çalışmada dosyalar değişti');
+  const stats = el('span', 'run-changes-stats', `${summary.files} dosya  +${summary.additions}  −${summary.deletions}`);
+  const actions = el('div', 'run-changes-actions');
+  const view = el('button', null, 'Değişiklikleri görüntüle');
+  view.addEventListener('click', () => openChangesModal(null, summary.runId));
+  actions.appendChild(view);
+  if (summary.undone) {
+    actions.appendChild(el('span', 'run-changes-undone', 'Geri alındı'));
+  } else {
+    const undo = el('button', 'run-changes-undo', 'Bu çalışmayı geri al');
+    undo.addEventListener('click', async () => {
+      const chat = chats.find((c) => c.id === summary.chatId) || active();
+      if (!chat || running.has(chat.id)) return;
+      if (!confirm(`Bu çalışmada değişen ${summary.files} dosya geri alınsın mı?`)) return;
+      const result = await window.api.undoRun(chat.id, summary.runId);
+      if (result.ok) summary.undone = true;
+      saveChats();
+      notice(chat, result.message);
+      await updateUndo();
+    });
+    actions.appendChild(undo);
+  }
+  card.append(heading, stats, actions);
+  return card;
 }
 
 // Son mesajın altındaki işlem düğmeleri: yeniden üret, son mesajı düzenle, planı uygula
@@ -886,11 +949,11 @@ function confirmModel(model) {
 // Mesajı ekler ve çalışmayı başlatır
 function submit(text) {
   const chat = active();
-  if (!chat || running.has(chat.id)) return;
-  if (!settings.hasApiKey) { openSettings(); return; }
+  if (!chat || running.has(chat.id)) return false;
+  if (!settings.hasApiKey) { openSettings(); return false; }
   const model = modelInput.value.trim();
-  if (!model) { modelInput.focus(); return; }
-  if (!confirmModel(model)) return;
+  if (!model) { modelInput.focus(); return false; }
+  if (!confirmModel(model)) return false;
 
   chat.model = model;
   chat.messages.push({ role: 'user', content: buildContent(text) });
@@ -898,6 +961,7 @@ function submit(text) {
   attachments = [];
   renderAttachments();
   startRun(chat);
+  return true;
 }
 
 function startRun(chat) {
@@ -911,6 +975,7 @@ function startRun(chat) {
     chatId: chat.id,
     messages: chat.messages,
     model: chat.model,
+    modelContextTokens: modelInfo.get(chat.model)?.context || 0,
     workspace: chat.workspace,
     planMode: !!chat.planMode,
     subagentEnabled: isChatSubagentOn(chat),
@@ -949,13 +1014,13 @@ async function sendMessage() {
   if (text.startsWith('/') && (await runSlash(text))) return;
   if (!text && !attachments.length) return;
 
+  if (!submit(text || 'Ekteki dosyalara bak.')) return;
   inputEl.value = '';
   autosize();
   hideSlashHints();
-  submit(text || 'Ekteki dosyalara bak.');
 }
 
-function finish(chatId, messages, error, aborted, extra) {
+async function finish(chatId, messages, error, aborted, extra) {
   const chat = chats.find((c) => c.id === chatId);
   const L = live[chatId];
   if (L?.raf) cancelAnimationFrame(L.raf);
@@ -963,11 +1028,26 @@ function finish(chatId, messages, error, aborted, extra) {
   running.delete(chatId);
   if (!chat) return;
   if (messages) chat.messages = messages;
+  if (extra?.runId) {
+    try {
+      const changes = await window.api.checkpointRunDetails(chatId, extra.runId);
+      if (changes?.totalFiles > 0 && !chat.messages.some((m) => m.role === 'changes_summary' && m.runId === extra.runId)) {
+        chat.messages.push({
+          role: 'changes_summary', chatId, runId: extra.runId,
+          files: changes.totalFiles, additions: changes.totalAdditions, deletions: changes.totalDeletions
+        });
+      }
+    } catch { /* değişiklik özeti yüklenemezse çalışma sonucunu yine göster */ }
+  }
   if (extra?.stepsSinceMd !== undefined) chat.stepsSinceMd = extra.stepsSinceMd;
   if (extra?.totalSteps !== undefined) chat.totalSteps = extra.totalSteps;
   chat.lastError = error && !aborted ? error : null;
+  if (extra?.verification === 'missing' && !error) {
+    chat.messages.push({ role: 'notice', content: '⚠️ Dosyalar değişti ama değişiklikten sonra test/derleme komutu çalıştırılmadı; sonuç doğrulanmadı. İstersen "testleri çalıştır" yaz.' });
+  }
   saveChats();
   if (chatId === activeId) renderAll(); else renderSidebar();
+  if (chatId === activeId) await updateUndo();
 }
 
 // ------------------------------------------------------------------ slash komutları
@@ -1388,6 +1468,15 @@ function makeQuestionCard(e) {
 }
 
 window.api.onEvent((e) => {
+  if (e.type === 'fatal') {
+    const text = `⚠️ Beklenmeyen hata: ${e.error}`;
+    const target = (e.chatId && chats.find((c) => c.id === e.chatId)) || chats.find((c) => c.id === activeId);
+    if (target) { target.messages.push({ role: 'notice', content: text }); saveChats(); }
+    const Lf = live[e.chatId] || live[activeId];
+    if (Lf) addRow(Lf.el, 'notice').textContent = text;
+    else if (target && target.id === activeId) renderAll();
+    return;
+  }
   if (e.type === 'done' || e.type === 'error') {
     finish(e.chatId, e.messages, e.type === 'error' ? e.error : null, e.aborted, e);
     return;
@@ -1461,7 +1550,7 @@ window.api.onEvent((e) => {
       L.tools[e.id]?.appendOutput(e.text);
       break;
     case 'tool_result':
-      L.tools[e.id]?.setResult(e.result);
+      L.tools[e.id]?.setResult(e.result, e.attachments);
       break;
     case 'approval':
       addRow(L.el).appendChild(makeApprovalCard(e));
@@ -1505,6 +1594,7 @@ function openSettings() {
   $('budget').value = settings.budget ?? '';
   $('budget-info').textContent = 'OpenRouter kullanım maliyetine göre sohbet bütçesini uygular.';
   $('max-context-tokens').value = settings.maxContextTokens ?? '';
+  if ($('subagent-budget')) $('subagent-budget').value = settings.subagentBudget ?? '';
   $('custom-prompt').value = settings.customPrompt || '';
   const pMode = settings.permissionMode || (settings.autoApprove ? 'auto' : 'normal');
   const radios = document.getElementsByName('perm-mode');
@@ -1734,7 +1824,7 @@ async function loadModels({ openAfter = false } = {}) {
     dl.replaceChildren();
     modelInfo.clear();
     for (const m of allModels) {
-      modelInfo.set(m.id, { tools: m.tools, images: m.images });
+      modelInfo.set(m.id, { tools: m.tools, images: m.images, context: m.context });
       const o = document.createElement('option');
       o.value = m.id;
       o.label = `${m.name}${m.tools ? '' : ' (araç desteği yok)'}${m.images ? ' · görsel' : ''}`;
@@ -1815,6 +1905,7 @@ $('settings-save').addEventListener('click', async () => {
     temperature: $('temperature').value,
     budget: $('budget').value,
     maxContextTokens: $('max-context-tokens').value,
+    subagentBudget: $('subagent-budget') ? $('subagent-budget').value : undefined,
     customPrompt: $('custom-prompt').value,
     sandbox: $('sandbox').checked,
     sandboxNetwork: $('sandbox-net').checked

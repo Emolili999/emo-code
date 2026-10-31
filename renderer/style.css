@@ -835,6 +835,7 @@ code, kbd { font-family: var(--mono); }
 .assistant-msg table { border-collapse: collapse; font-size: 13.5px; }
 .assistant-msg th, .assistant-msg td { border: 1px solid var(--border); padding: 5px 10px; }
 .blocked-img { color: var(--text-dim); font-style: italic; }
+.file-attachment { display: inline-block; margin-top: 6px; color: var(--text-dim); font-size: 12px; }
 .copy-btn {
   position: absolute; top: 6px; right: 6px;
   padding: 2px 8px; font-size: 11.5px; font-family: var(--mono);
@@ -851,6 +852,37 @@ code, kbd { font-family: var(--mono); }
   color: var(--text-dim); font-size: 13px; font-family: var(--mono);
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
+.run-changes-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 9px;
+  background: var(--bg-side);
+  font-size: 12.5px;
+}
+.run-changes-summary strong { color: var(--text); }
+.run-changes-stats {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.run-changes-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-left: auto; }
+.run-changes-actions button {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-raised);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+.run-changes-actions button:hover { border-color: var(--accent); }
+.run-changes-actions .run-changes-undo { color: var(--danger-text); }
+.run-changes-undone { color: var(--success); font-size: 12px; }
 .msg-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .msg-actions button {
   padding: 5px 12px; font-size: 12.5px; border-radius: 8px;

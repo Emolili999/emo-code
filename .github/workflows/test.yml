@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install sandbox and UI test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap xvfb
+      - run: npm ci
+      - name: Unit and IPC tests with coverage gates
+        run: npm run test:coverage
+      - name: Electron renderer smoke test
+        run: xvfb-run --auto-servernum npm run test:ui
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Cross-platform IPC, renderer bridge, and security tests
+        run: npm run test:windows
+      - name: Build portable and unpacked Windows apps
+        run: npx electron-builder --win portable --dir
+      - name: Launch packaged Windows app
+        shell: pwsh
+        run: ./scripts/test-windows-startup.ps1

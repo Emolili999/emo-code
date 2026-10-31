@@ -1,8 +1,8 @@
 {
-  "name": "emo-code-v2",
-  "version": "0.2.0",
-  "desktopName": "emo-code-v2.desktop",
-  "description": "OpenRouter tabanlı, kademeli izin yönetimi ve gece mavisi temalı masaüstü kodlama ajanı (v2)",
+  "name": "emocode-v3.1",
+  "version": "3.1.0",
+  "desktopName": "emocode-v3.1.desktop",
+  "description": "OpenRouter tabanlı, kademeli izin yönetimli masaüstü kodlama ajanı (emocode v3.1)",
   "author": {
     "name": "Emo"
   },
@@ -11,6 +11,9 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test \"test/*.test.js\"",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-lines=70 --test-coverage-branches=60 --test-coverage-functions=65 --test-coverage-include=main.js --test-coverage-include=preload.js --test-coverage-include=lib/*.js --test \"test/*.test.js\"",
+    "test:ui": "node scripts/test-ui.mjs",
+    "test:windows": "node --test test/main.test.js test/renderer.test.js test/security.test.js test/attachments.test.js",
     "dist": "electron-builder --linux AppImage",
     "dist:win": "LANG=C.UTF-8 LC_ALL=C.UTF-8 electron-builder --win portable"
   },
@@ -23,8 +26,9 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.emo.code.v2",
-    "productName": "emo-code-v2",
+    "appId": "com.emo.code.v3",
+    "productName": "emocode v3.1",
+    "artifactName": "emocode-v3.1.${ext}",
     "files": [
       "main.js",
       "preload.js",

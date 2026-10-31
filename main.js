@@ -4,25 +4,28 @@ const path = require('path');
 
 const { readJSON, writeJSON, atomicWrite } = require('./lib/store');
 const sec = require('./lib/security');
-const { toolDefs, executeTool, PARALLEL_SAFE, parseToolArgs, DEFAULT_SUBAGENT_MODEL } = require('./lib/tools');
+const { toolDefs, executeTool, PARALLEL_SAFE, parseToolArgs, DEFAULT_SUBAGENT_MODEL, REPEAT_LIMIT } = require('./lib/tools');
 const { systemPrompt, loadProjectInstructions, mergeProgressSection, PROGRESS_START, PROGRESS_END } = require('./lib/prompt');
-const { fitHistory, repairToolPairs, prepareForApi } = require('./lib/context');
+const { fitRequestContext, repairToolPairs, prepareForApi } = require('./lib/context');
 const { streamCompletion, complete } = require('./lib/openrouter');
 const { createApprovals } = require('./lib/approvals');
 const { createCheckpoints } = require('./lib/checkpoints');
-const { sandboxAvailable } = require('./lib/exec');
+const { createAttachments } = require('./lib/attachments');
+const { sandboxAvailable, closeAllShellSessions, closeAllBackgroundJobs } = require('./lib/exec');
 
 // ---------------------------------------------------------------- depolama
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 const chatsFile = () => path.join(app.getPath('userData'), 'chats.json');
 const checkpoints = () => (checkpointsInst ??= createCheckpoints(path.join(app.getPath('userData'), 'checkpoints')));
 let checkpointsInst;
+const attachments = () => (attachmentsInst ??= createAttachments(path.join(app.getPath('userData'), 'attachments')));
+let attachmentsInst;
 const approvals = createApprovals();
 
 // ----------------------------------------------------------------- ayarlar
 // API anahtarı mümkünse işletim sistemi anahtarlığıyla (safeStorage) şifrelenir ve arayüze hiç gönderilmez.
 const PUBLIC_KEYS = ['permissionMode', 'autoApprove', 'defaultModel', 'fallbackModel', 'subagentModel', 'subagentEnabled', 'mdUpdateSteps', 'lastWorkspace', 'theme', 'sandbox', 'sandboxNetwork',
-  'commandTimeout', 'maxSteps', 'temperature', 'customPrompt', 'budget', 'maxContextTokens', 'webSearch', 'reasoningEffort'];
+  'commandTimeout', 'maxSteps', 'temperature', 'customPrompt', 'budget', 'maxContextTokens', 'webSearch', 'reasoningEffort', 'subagentBudget'];
 const VALID_THEMES = new Set(['dark', 'light', 'auto', 'midnight', 'night-blue']);
 const VALID_PERMISSION_MODES = new Set(['strict', 'normal', 'auto', 'turbo']);
 const VALID_REASONING = new Set(['none', 'low', 'medium', 'high']);
@@ -82,6 +85,8 @@ function loadSettings() {
   }
   const data = {};
   for (const k of PUBLIC_KEYS) if (raw[k] !== undefined) data[k] = raw[k];
+  // Prefer an available OS-level command sandbox on first run.
+  if (data.sandbox === undefined) data.sandbox = sandboxAvailable();
   if (!data.permissionMode) {
     data.permissionMode = data.autoApprove ? 'auto' : 'normal';
   }
@@ -123,6 +128,11 @@ function saveSettings(patch) {
     if (Number.isFinite(n) && n >= 0 && n <= 2) next.temperature = Number(n.toFixed(4));
     else delete next.temperature;
   }
+  if ('subagentBudget' in next) {
+    const n = parseFiniteNumber(next.subagentBudget);
+    if (Number.isFinite(n) && n > 0) next.subagentBudget = Number(n.toFixed(4));
+    else delete next.subagentBudget;
+  }
   if ('budget' in next) {
     const n = parseFiniteNumber(next.budget);
     if (Number.isFinite(n) && n > 0) next.budget = Number(n.toFixed(4));
@@ -163,6 +173,18 @@ function saveSettings(patch) {
   return publicSettings();
 }
 
+function migrateV2UserData() {
+  const current = app.getPath('userData');
+  const previous = path.join(app.getPath('appData'), 'emo-code-v2');
+  if (path.resolve(current) === path.resolve(previous) || !fs.existsSync(previous)) return;
+  try {
+    fs.mkdirSync(current, { recursive: true });
+    fs.cpSync(previous, current, { recursive: true, force: false, errorOnExist: false });
+  } catch (e) {
+    console.warn(`Önceki emo-code verileri taşınamadı: ${e.message}`);
+  }
+}
+
 // ------------------------------------------------------------------ pencere
 let win;
 function createWindow() {
@@ -170,7 +192,7 @@ function createWindow() {
   const isMidnight = curCfg.theme === 'midnight' || curCfg.theme === 'night-blue';
   const bgColor = isMidnight ? '#0b0f19' : (curCfg.theme === 'light' ? '#faf8f5' : '#191816');
   win = new BrowserWindow({
-    title: 'emo-code v2',
+    title: 'emocode v3.1',
     width: 1280,
     height: 820,
     minWidth: 760,
@@ -196,13 +218,42 @@ function createWindow() {
   win.webContents.on('will-attach-webview', (e) => e.preventDefault());
 }
 
+// ------------------------------------------------- süreç sağlamlığı
+// Tek örnek: iki pencere aynı settings.json/chats.json'ı ezer. Kilit alınamazsa
+// ikinci örnek sessizce kapanır ve mevcut pencereyi öne getirir.
+const gotSingleInstanceLock = app.requestSingleInstanceLock ? app.requestSingleInstanceLock() : true;
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else if (app.on) {
+  app.on('second-instance', () => {
+    const windows = BrowserWindow.getAllWindows();
+    const w = windows[0];
+    if (!w) return;
+    if (w.isMinimized?.()) w.restore();
+    w.show?.();
+    w.focus?.();
+  });
+}
+
+// Beklenmeyen hatalar sessizce süreci öldürmesin: kullanıcıya bildir ve durumu koru.
+function reportFatal(kind, err) {
+  const text = err?.stack || err?.message || String(err);
+  console.error(`[emocode] ${kind}: ${text}`);
+  try { win?.webContents.send('chat:event', { chatId: null, type: 'fatal', error: `${kind}: ${err?.message || err}` }); } catch { /* pencere yok */ }
+}
+process.on('uncaughtException', (err) => reportFatal('uncaughtException', err));
+process.on('unhandledRejection', (reason) => reportFatal('unhandledRejection', reason));
+
 app.whenReady().then(() => {
+  migrateV2UserData();
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('before-quit', () => {
   for (const ac of controllers.values()) ac.abort();
+  closeAllShellSessions();
+  closeAllBackgroundJobs();
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
@@ -234,10 +285,65 @@ ipcMain.handle('auth:check_key', async (_, customKey) => {
   }
 });
 ipcMain.handle('chats:load', () => readJSON(chatsFile(), []));
+// Sohbet kaydı sınırı: bundan büyük dosya yazılmaz (yarım/şişmiş kayıt yerine hata döner).
+const MAX_CHATS_BYTES = 200 * 1024 * 1024;
+// Base64 görsel/PDF içeriklerini ek deposuna taşıyıp küçük referanslarla değiştirir.
+function externalizeAttachments(messages) {
+  let changed = false;
+  const out = messages.map((m) => {
+    if (!m || !Array.isArray(m.content) || !m.content.some((p) => p?.type === 'image_url' || p?.type === 'file')) return m;
+    const content = m.content.map((p) => {
+      const url = p?.type === 'image_url' ? p.image_url?.url : (p?.type === 'file' ? p.file?.file_data : null);
+      if (typeof url !== 'string' || (!url.startsWith('data:image/') && !url.startsWith('data:application/pdf;'))) return p;
+      try {
+        const { ref, mime, size } = attachments().save(url);
+        changed = true;
+        return mime === 'application/pdf'
+          ? { type: 'file_ref', ref, mime, size, filename: p.file?.filename || 'attachment.pdf' }
+          : { type: 'image_ref', ref, mime, size };
+      } catch { return p; } // desteklenmeyen/aşırı büyük: olduğu gibi bırak
+    });
+    return { ...m, content };
+  });
+  return changed ? out : messages;
+}
+const externalizeChats = (chats) => chats.map((c) => (c && Array.isArray(c.messages) ? { ...c, messages: externalizeAttachments(c.messages) } : c));
+
 ipcMain.handle('chats:save', (_, chats) => {
   if (!Array.isArray(chats)) return false;
-  writeJSON(chatsFile(), chats, { backup: true, pretty: false });
+  const slim = externalizeChats(chats);
+  if (Buffer.byteLength(JSON.stringify(slim)) > MAX_CHATS_BYTES) {
+    console.warn('[emocode] chats.json boyut sınırı aşıldı; kayıt yapılmadı.');
+    return false;
+  }
+  writeJSON(chatsFile(), slim, { backup: true, pretty: false });
+  try { sweepAttachments(slim); } catch { /* temizlik başarısız olsa da kayıt geçerli */ }
   return true;
+});
+// Hiçbir sohbette kullanılmayan ekleri siler. Yeni kaydedilmiş ama henüz sohbete yazılmamış
+// dosyaları korumak için 10 dakikadan eski olanlara dokunulur; en çok 30 sn'de bir çalışır.
+let lastSweep = 0;
+function sweepAttachments(chats) {
+  const now = Date.now();
+  if (now - lastSweep < 30000) return;
+  lastSweep = now;
+  const dir = path.join(app.getPath('userData'), 'attachments');
+  if (!fs.existsSync(dir)) return;
+  const used = new Set();
+  for (const c of chats) for (const m of c?.messages || []) {
+    if (Array.isArray(m?.content)) for (const p of m.content) if (p?.type === 'image_ref' || p?.type === 'file_ref') used.add(p.ref);
+  }
+  const unused = [];
+  for (const name of fs.readdirSync(dir)) {
+    const m = /^(att-[a-f0-9]{32})\.(png|jpeg|gif|webp|pdf)$/.exec(name);
+    if (!m || used.has(m[1])) continue;
+    if (now - fs.statSync(path.join(dir, name)).mtimeMs < 10 * 60 * 1000) continue;
+    unused.push(m[1]);
+  }
+  if (unused.length) attachments().removeMany(unused);
+}
+ipcMain.handle('attachment:get', (_, ref) => {
+  try { return attachments().readAsDataUrl(String(ref || '')); } catch { return null; }
 });
 ipcMain.handle('sys:info', () => ({
   sandboxAvailable: sandboxAvailable(),
@@ -328,9 +434,13 @@ ipcMain.handle('chat:export', async (_, { title, content, ext }) => {
 // --------------------------------------------------- geri alma noktaları
 ipcMain.handle('checkpoint:summary', (_, chatId) => checkpoints().summary(chatId));
 ipcMain.handle('checkpoint:details', (_, chatId) => checkpoints().getChangesDetails(chatId));
+ipcMain.handle('checkpoint:run_details', (_, { chatId, runId }) => checkpoints().getChangesDetails(chatId, runId));
 ipcMain.handle('checkpoint:undo', (_, chatId) => (controllers.has(chatId)
   ? { ok: false, message: 'Çalışma sürerken geri alınamaz.' }
   : checkpoints().undoLast(chatId)));
+ipcMain.handle('checkpoint:undo_run', (_, { chatId, runId }) => (controllers.has(chatId)
+  ? { ok: false, message: 'Çalışma sürerken geri alınamaz.' }
+  : checkpoints().undoRun(chatId, runId)));
 ipcMain.handle('checkpoint:undo_all', (_, chatId) => (controllers.has(chatId)
   ? { ok: false, message: 'Çalışma sürerken geri alınamaz.' }
   : checkpoints().undoAll(chatId)));
@@ -423,7 +533,7 @@ ${prevProgress ? `<onceki_ozet>\n${sec.truncate(prevProgress, 3000)}\n</onceki_o
   return { file: 'EMO.md', summary: r.text.trim(), cost: r.cost, prompt: r.prompt, completion: r.completion };
 }
 
-ipcMain.handle('chat:send', async (_, { chatId, messages, model, workspace, planMode, subagentEnabled, subagentModel, noTools, webSearch, reasoningEffort, spent, permissionMode, stepsSinceMd, totalSteps }) => {
+ipcMain.handle('chat:send', async (_, { chatId, messages, model, modelContextTokens, workspace, planMode, subagentEnabled, subagentModel, noTools, webSearch, reasoningEffort, spent, permissionMode, stepsSinceMd, totalSteps }) => {
   const settings = loadSettings();
   const cfg = settings.data;
   const send = (type, data = {}) => {
@@ -462,7 +572,7 @@ ipcMain.handle('chat:send', async (_, { chatId, messages, model, workspace, plan
   let runCost = 0;
   const baseCtx = {
     workspace, send, ac, settings: cfg, chatId, approvals, checkpoints: checkpoints(),
-    runId, planMode: !!planMode, permissionMode: activePermissionMode,
+    runId, planMode: !!planMode, permissionMode: activePermissionMode, subagentState: { requests: 0, cost: 0 },
     apiKey, mainModel: model, subagentModel: activeSubagentModel,
     onSubagentUsage: (u) => {
       runCost += Number(u.cost) || 0;
@@ -475,7 +585,11 @@ ipcMain.handle('chat:send', async (_, { chatId, messages, model, workspace, plan
   let curStepsSinceMd = Math.max(0, Number(stepsSinceMd) || 0);
   let curTotalSteps = Math.max(0, Number(totalSteps) || 0);
   const budget = Number(cfg.budget) > 0 ? Number(cfg.budget) : 0;
-  const maxTokens = clamp(cfg.maxContextTokens, 8000, 1000000, 150000);
+  const configuredContext = clamp(cfg.maxContextTokens, 8000, 1000000, 150000);
+  const reportedModelContext = Number(modelContextTokens);
+  const maxTokens = Number.isFinite(reportedModelContext) && reportedModelContext > 0
+    ? Math.min(configuredContext, Math.max(1000, reportedModelContext))
+    : configuredContext;
   const tools = noTools ? [] : toolDefs(!!planMode, isSubagentOn);
 
   const buildSysMsg = () => {
@@ -515,6 +629,15 @@ ipcMain.handle('chat:send', async (_, { chatId, messages, model, workspace, plan
       }
     };
 
+    // Döngü koruması: aynı araç+argüman imzası bir çalışmada REPEAT_LIMIT kez denendiyse çalıştırma.
+    const callCounts = new Map();
+    // Doğrulama kapısı: dosya değişti mi, değişiklikten sonra komut (test) çalıştı mı?
+    const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'multi_edit']);
+    const RUN_TOOLS = new Set(['run_command', 'shell_session', 'background_process']);
+    let filesChanged = false;
+    let verifiedSinceChange = false;
+    const pendingAttachments = []; // araçların döndürdüğü ekler tool mesajlarından sonra eklenir
+
     const runTool = async (tc) => {
       const parsed = parseToolArgs(tc.function.arguments);
       const args = parsed.ok ? parsed.args : null;
@@ -522,10 +645,44 @@ ipcMain.handle('chat:send', async (_, { chatId, messages, model, workspace, plan
         tc.function.arguments = JSON.stringify(parsed.args);
       }
       send('tool_start', { id: tc.id, name: tc.function.name, args });
-      const result = args
-        ? await executeTool(tc.function.name, args, { ...baseCtx, toolId: tc.id })
-        : `Hata: "${tc.function.name}" aracı için gönderilen JSON argümanları ayrıştırılamadı (${parsed.error}). Lütfen geçerli bir JSON nesnesi gönder.`;
-      send('tool_result', { id: tc.id, result: sec.truncate(result, 4000) });
+      let result;
+      let toolAttachments = [];
+      if (!args) {
+        result = `Hata: "${tc.function.name}" aracı için gönderilen JSON argümanları ayrıştırılamadı (${parsed.error}). Lütfen geçerli bir JSON nesnesi gönder.`;
+      } else {
+        const sig = `${tc.function.name}:${JSON.stringify(args)}`;
+        const n = (callCounts.get(sig) || 0) + 1;
+        callCounts.set(sig, n);
+        if (n >= REPEAT_LIMIT) {
+          result = `Uyarı: Aynı "${tc.function.name}" çağrısı bu çalışmada ${n}. kez tekrarlandı; çalıştırılmadı. Önceki sonuçları kullan veya farklı bir yaklaşım dene; ilerleyemiyorsan kullanıcıya sor.`;
+        } else {
+          const raw = await executeTool(tc.function.name, args, { ...baseCtx, toolId: tc.id });
+          if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            const parts = Array.isArray(raw.content) ? raw.content : [{ type: 'text', text: String(raw.content ?? '') }];
+            result = parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n') || '(ek dosya)';
+            for (const p of parts) {
+              if (p.type === 'image_url') {
+                const url = p.image_url?.url || '';
+                if (!/^data:image\//.test(url)) continue;
+                try { pendingAttachments.push({ type: 'image_ref', ...attachments().save(url) }); toolAttachments.push(url); }
+                catch (err) { result += `\n(görsel eklenemedi: ${err.message})`; }
+              } else if (p.type === 'file' && /^data:application\/pdf;base64,/.test(p.file?.file_data || '')) {
+                try {
+                  pendingAttachments.push({ type: 'file_ref', ...attachments().save(p.file.file_data), filename: p.file.filename || 'attachment.pdf' });
+                } catch (err) { result += `\n(PDF eklenemedi: ${err.message})`; }
+              }
+            }
+          } else {
+            result = String(raw ?? '');
+          }
+          const failed = /^(Hata|Kullanıcı bu işlemi reddetti|Uyarı)/.test(result);
+          if (!failed) {
+            if (WRITE_TOOLS.has(tc.function.name)) { filesChanged = true; verifiedSinceChange = false; }
+            else if (RUN_TOOLS.has(tc.function.name)) verifiedSinceChange = true;
+          }
+        }
+      }
+      send('tool_result', { id: tc.id, result: sec.truncate(result, 4000), attachments: toolAttachments.slice(0, 4) });
       return result;
     };
 
@@ -539,7 +696,8 @@ ipcMain.handle('chat:send', async (_, { chatId, messages, model, workspace, plan
         webSearch: webSearch !== undefined ? !!webSearch : !!cfg.webSearch,
         reasoningEffort: reasoningEffort !== undefined ? reasoningEffort : (cfg.reasoningEffort || ''),
         temperature: Number.isFinite(cfg.temperature) ? Math.min(2, Math.max(0, cfg.temperature)) : undefined,
-        messages: [sysMsg, ...fitHistory(prepareForApi(history), maxTokens)]
+        maxTokens: Math.min(4096, Math.floor(maxTokens / 4)),
+        messages: [sysMsg, ...fitRequestContext(attachments().resolveForApi(prepareForApi(history)), maxTokens, { system: sysMsg, tools })]
       });
       history.push(assistant);
       if (usage) { runCost += Number(usage.cost) || 0; send('usage', usage); }
@@ -577,6 +735,10 @@ ipcMain.handle('chat:send', async (_, { chatId, messages, model, workspace, plan
         batch.forEach((tc, k) => history.push({ role: 'tool', tool_call_id: tc.id, content: results[k] }));
         i = j;
       }
+      // Ekler tool mesajlarının hemen ardından tek user mesajı olarak eklenir (tool-yanıt eşleşmesi bozulmaz).
+      if (pendingAttachments.length) {
+        history.push({ role: 'user', content: [{ type: 'text', text: '[Araç çıktısı: okunan ekler]' }, ...pendingAttachments.splice(0)] });
+      }
       if (ac.signal.aborted) throw Object.assign(new Error('Durduruldu'), { name: 'AbortError' });
       curStepsSinceMd++;
       curTotalSteps++;
@@ -584,10 +746,13 @@ ipcMain.handle('chat:send', async (_, { chatId, messages, model, workspace, plan
       await maybeUpdateProgressMd();
       if (step === maxSteps - 1) throw new Error(`En fazla adım sayısına (${maxSteps}) ulaşıldı. Devam etmek için "devam et" yaz.`);
     }
-    send('done', { messages: repairToolPairs(history), stepsSinceMd: curStepsSinceMd, totalSteps: curTotalSteps });
+    send('done', {
+      messages: repairToolPairs(history), stepsSinceMd: curStepsSinceMd, totalSteps: curTotalSteps, runId,
+      ...(filesChanged && !verifiedSinceChange ? { verification: 'missing' } : {})
+    });
   } catch (e) {
     const aborted = e.name === 'AbortError' || ac.signal.aborted;
-    send('error', { error: aborted ? 'Durduruldu.' : e.message, messages: repairToolPairs(history), aborted });
+    send('error', { error: aborted ? 'Durduruldu.' : e.message, messages: repairToolPairs(history), aborted, runId });
   } finally {
     if (controllers.get(chatId) === ac) controllers.delete(chatId);
   }
@@ -629,14 +794,15 @@ ipcMain.handle('chat:compact', async (_, { chatId, messages, model }) => {
 });
 
 // EMO.md ilerleme özetini manuel veya komutla günceller (/md)
-ipcMain.handle('chat:update_md', async (_, { chatId, messages, model, workspace, subagentModel, totalSteps }) => {
+ipcMain.handle('chat:update_md', async (_, { chatId, messages, model, workspace, subagentModel, totalSteps, planMode }) => {
+  if (planMode) throw new Error('Plan modunda EMO.md güncellenemez (dosya yazımı kapalı).');
+  if (controllers.has(chatId)) throw new Error('Çalışma sürerken EMO.md güncellenemez.');
   const settings = loadSettings();
   const apiKey = settings.apiKey;
   if (!apiKey) throw new Error('OpenRouter API anahtarı girilmemiş.');
   if (/\s/.test(apiKey)) throw new Error('OpenRouter API anahtarı geçersiz (boşluk içeriyor).');
   if (!workspace) throw new Error('Önce bir çalışma klasörü seçmelisin.');
   if (!Array.isArray(messages) || !messages.length) throw new Error('EMO.md içine özetlenecek konuşma geçmişi yok.');
-  controllers.get(chatId)?.abort();
   const ac = new AbortController();
   controllers.set(chatId, ac);
   const runId = checkpoints().begin();

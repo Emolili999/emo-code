@@ -242,6 +242,13 @@ test('todo_write ve ask_user', async () => {
   assert.equal(await t.run('ask_user', { question: 'Devam?', options: ['Evet', 'Hayır'] }), 'Kullanıcı yanıtı: Evet');
 });
 
+test('git: salt okunur diff ve show harici komut argümanlarını reddeder', async () => {
+  const t = setup();
+  assert.match(await t.run('git', { action: 'diff', args: '--stat' }), /git deposu yok/);
+  assert.match(await t.run('git', { action: 'diff', args: '--ext-diff' }), /harici komut çalıştıran/);
+  assert.match(await t.run('git', { action: 'show', args: '--textconv' }), /harici komut çalıştıran/);
+});
+
 test('web_fetch: yerel adres reddedilir, sorgulu adres uyarı ile sorulur', async () => {
   const t = setup({ autoApprove: true });
   assert.match(await t.run('web_fetch', { url: 'http://127.0.0.1:1/x' }), /Hata.*(Yerel|özel)/);
